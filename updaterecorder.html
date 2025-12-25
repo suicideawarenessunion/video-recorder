@@ -18,28 +18,21 @@
 
   h2 { margin: 10px 0; }
 
-  select {
-    padding: 8px;
-    margin-bottom: 8px;
-    font-size: 15px;
-  }
-
   video {
     width: 100%;
-    height: calc(100vh - 200px);
+    height: calc(100vh - 210px);
     object-fit: cover;
     background: black;
-    transform: scaleX(-1); /* front cam mirror */
   }
 
-  .btn-group {
+  .controls {
     display: flex;
     gap: 10px;
-    margin-top: 10px;
+    margin: 10px 0;
   }
 
   button { 
-    padding: 12px 20px; 
+    padding: 12px 18px; 
     font-size: 16px; 
     cursor: pointer;
   }
@@ -81,13 +74,12 @@
 
 <h2>Video Recorder</h2>
 
-<select id="cameraSelect"></select>
+<video id="preview" autoplay muted playsinline></video>
 
-<video id="preview" autoplay muted></video>
-
-<div class="btn-group">
-  <button id="startBtn">Start Recording</button>
-  <button id="stopBtn" disabled>Stop Recording</button>
+<div class="controls">
+  <button id="flipBtn">🔄 Flip Camera</button>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
 </div>
 
 <div id="toast"></div>
@@ -96,13 +88,12 @@
 let mediaRecorder;
 let recordedChunks = [];
 let currentStream;
+let currentFacing = "environment"; // default back camera
 
-// URL params
 const params = new URLSearchParams(window.location.search);
 const userEmail = params.get("email");
 const userName  = params.get("name");
 
-// Toast
 function showToast(msg) {
   const toast = document.getElementById("toast");
   toast.textContent = msg;
@@ -110,70 +101,56 @@ function showToast(msg) {
   setTimeout(() => toast.className = "", 3000);
 }
 
-/* 🔑 VERY IMPORTANT
-   First permission request – otherwise mobile labels/deviceId break */
-async function loadCameras() {
-  await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+async function startCamera() {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+  }
 
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const videoDevices = devices.filter(d => d.kind === "videoinput");
-
-  const select = document.getElementById("cameraSelect");
-  select.innerHTML = "";
-
-  videoDevices.forEach((device, i) => {
-    const option = document.createElement("option");
-    option.value = device.deviceId;
-    option.text = device.label || `Camera ${i + 1}`;
-    select.appendChild(option);
+  currentStream = await navigator.mediaDevices.getUserMedia({
+    audio: true,
+    video: { facingMode: { ideal: currentFacing } }
   });
+
+  document.getElementById("preview").srcObject = currentStream;
+
+  // mirror only for front cam
+  document.getElementById("preview").style.transform =
+    currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
 }
 
-// On page load
-window.onload = loadCameras;
+// initial camera load
+startCamera();
 
-// ▶️ Start Recording (SAFE constraints)
-document.getElementById("startBtn").onclick = async function () {
-  try {
-    const cameraId = document.getElementById("cameraSelect").value || null;
-
-    const constraints = {
-      audio: true,
-      video: cameraId
-        ? { deviceId: { ideal: cameraId } }   // ✅ mobile-safe
-        : { facingMode: "user" }               // fallback
-    };
-
-    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
-    document.getElementById("preview").srcObject = currentStream;
-
-    recordedChunks = [];
-    mediaRecorder = new MediaRecorder(currentStream);
-
-    mediaRecorder.ondataavailable = e => {
-      if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    mediaRecorder.start();
-
-    startBtn.disabled = true;
-    stopBtn.disabled = false;
-
-  } catch (err) {
-    alert("Camera/Mic error: " + err.name);
-  }
+// Flip Camera
+document.getElementById("flipBtn").onclick = async () => {
+  currentFacing = currentFacing === "user" ? "environment" : "user";
+  await startCamera();
 };
 
-// ⏹ Stop Recording
-document.getElementById("stopBtn").onclick = function () {
+// Start Recording
+document.getElementById("startBtn").onclick = () => {
+  recordedChunks = [];
+  mediaRecorder = new MediaRecorder(currentStream);
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  mediaRecorder.start();
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+};
+
+// Stop Recording
+document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
   currentStream.getTracks().forEach(track => track.stop());
 
-  mediaRecorder.onstop = function () {
+  mediaRecorder.onstop = () => {
     const blob = new Blob(recordedChunks, { type: "video/mp4" });
     const reader = new FileReader();
 
-    reader.onloadend = function () {
+    reader.onloadend = () => {
       const base64Data = reader.result.split(",")[1];
 
       fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke/?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
@@ -182,12 +159,12 @@ document.getElementById("stopBtn").onclick = function () {
         body: JSON.stringify({
           filename: "video_" + Date.now() + ".mp4",
           filedata: base64Data,
-          userEmail: userEmail,
-          userName: userName
+          userEmail,
+          userName
         })
       })
       .then(() => showToast("Video uploaded successfully!"))
-      .catch(err => showToast("Upload failed"));
+      .catch(() => showToast("Upload failed"));
     };
 
     reader.readAsDataURL(blob);
