@@ -7,58 +7,33 @@
 <style>
   body { 
     font-family: sans-serif; 
+    padding: 0; 
     margin: 0; 
-    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #f8f8f8;
     height: 100vh;
-    overflow: hidden;
   }
 
-  h2 {
-    color: #fff;
-    text-align: center;
-    margin: 10px 0;
-  }
-
-  .camera-container {
-    position: relative;
-    width: 100%;
-    height: calc(100vh - 120px);
-  }
+  h2 { margin: 10px 0; }
 
   video {
     width: 100%;
-    height: 100%;
+    height: calc(100vh - 210px);
     object-fit: cover;
     background: black;
   }
 
-  /* 🔄 Flip icon overlay */
-  #flipBtn {
-    position: absolute;
-    top: 15px;
-    right: 15px;
-    z-index: 10;
-    background: rgba(0,0,0,0.6);
-    color: #fff;
-    border: none;
-    border-radius: 50%;
-    width: 48px;
-    height: 48px;
-    font-size: 22px;
-    cursor: pointer;
-  }
-
   .controls {
     display: flex;
-    justify-content: center;
-    gap: 20px;
-    padding: 10px;
-    background: #111;
+    gap: 10px;
+    margin: 10px 0;
   }
 
-  button.control-btn {
-    padding: 12px 24px;
-    font-size: 16px;
+  button { 
+    padding: 12px 18px; 
+    font-size: 16px; 
     cursor: pointer;
   }
 
@@ -71,15 +46,26 @@
     border-radius: 4px;
     padding: 16px;
     position: fixed;
-    z-index: 20;
+    z-index: 1;
     left: 50%;
     bottom: 30px;
     transform: translateX(-50%);
-    font-size: 16px;
+    font-size: 17px;
   }
 
   #toast.show {
     visibility: visible;
+    animation: fadein 0.5s, fadeout 0.5s 2.5s;
+  }
+
+  @keyframes fadein {
+    from { bottom: 0; opacity: 0; }
+    to { bottom: 30px; opacity: 1; }
+  }
+
+  @keyframes fadeout {
+    from { bottom: 30px; opacity: 1; }
+    to { bottom: 0; opacity: 0; }
   }
 </style>
 </head>
@@ -88,15 +74,12 @@
 
 <h2>Video Recorder</h2>
 
-<div class="camera-container">
-  <video id="preview" autoplay muted playsinline></video>
-  <!-- 🔄 ONE TAP FLIP ICON -->
-  <button id="flipBtn">🔄</button>
-</div>
+<video id="preview" autoplay muted playsinline></video>
 
 <div class="controls">
-  <button id="startBtn" class="control-btn">Start</button>
-  <button id="stopBtn" class="control-btn" disabled>Stop</button>
+  <button id="flipBtn">🔄 Flip Camera</button>
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
 </div>
 
 <div id="toast"></div>
@@ -105,7 +88,7 @@
 let mediaRecorder;
 let recordedChunks = [];
 let currentStream;
-let currentFacing = "environment"; // back cam default
+let currentFacing = "environment"; // default back camera
 
 const params = new URLSearchParams(window.location.search);
 const userEmail = params.get("email");
@@ -128,24 +111,23 @@ async function startCamera() {
     video: { facingMode: { ideal: currentFacing } }
   });
 
-  const preview = document.getElementById("preview");
-  preview.srcObject = currentStream;
+  document.getElementById("preview").srcObject = currentStream;
 
-  // mirror only front camera
-  preview.style.transform =
+  // mirror only for front cam
+  document.getElementById("preview").style.transform =
     currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
 }
 
-// initial load
+// initial camera load
 startCamera();
 
-// 🔄 ONE TAP FLIP (same symbol)
+// Flip Camera
 document.getElementById("flipBtn").onclick = async () => {
   currentFacing = currentFacing === "user" ? "environment" : "user";
   await startCamera();
 };
 
-// ▶️ Start Recording
+// Start Recording
 document.getElementById("startBtn").onclick = () => {
   recordedChunks = [];
   mediaRecorder = new MediaRecorder(currentStream);
@@ -159,7 +141,7 @@ document.getElementById("startBtn").onclick = () => {
   stopBtn.disabled = false;
 };
 
-// ⏹ Stop Recording
+// Stop Recording
 document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
   currentStream.getTracks().forEach(track => track.stop());
