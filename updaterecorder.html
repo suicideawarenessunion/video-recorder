@@ -16,9 +16,7 @@
     height: 100vh;
   }
 
-  h2 {
-    margin: 10px 0;
-  }
+  h2 { margin: 10px 0; }
 
   select {
     padding: 8px;
@@ -31,7 +29,7 @@
     height: calc(100vh - 200px);
     object-fit: cover;
     background: black;
-    transform: scaleX(-1); /* Front cam mirror */
+    transform: scaleX(-1); /* front cam mirror */
   }
 
   .btn-group {
@@ -83,7 +81,6 @@
 
 <h2>Video Recorder</h2>
 
-<!-- ✅ Camera selector -->
 <select id="cameraSelect"></select>
 
 <video id="preview" autoplay muted></video>
@@ -113,35 +110,41 @@ function showToast(msg) {
   setTimeout(() => toast.className = "", 3000);
 }
 
-// ✅ Load available cameras
+/* 🔑 VERY IMPORTANT
+   First permission request – otherwise mobile labels/deviceId break */
 async function loadCameras() {
+  await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
   const devices = await navigator.mediaDevices.enumerateDevices();
   const videoDevices = devices.filter(d => d.kind === "videoinput");
 
   const select = document.getElementById("cameraSelect");
   select.innerHTML = "";
 
-  videoDevices.forEach((device, index) => {
+  videoDevices.forEach((device, i) => {
     const option = document.createElement("option");
     option.value = device.deviceId;
-    option.text = device.label || `Camera ${index + 1}`;
+    option.text = device.label || `Camera ${i + 1}`;
     select.appendChild(option);
   });
 }
 
-// Page load
+// On page load
 window.onload = loadCameras;
 
-// Start Recording
-document.getElementById("startBtn").onclick = async function() {
+// ▶️ Start Recording (SAFE constraints)
+document.getElementById("startBtn").onclick = async function () {
   try {
-    const cameraId = document.getElementById("cameraSelect").value;
+    const cameraId = document.getElementById("cameraSelect").value || null;
 
-    currentStream = await navigator.mediaDevices.getUserMedia({
-      video: { deviceId: { exact: cameraId } },
-      audio: true
-    });
+    const constraints = {
+      audio: true,
+      video: cameraId
+        ? { deviceId: { ideal: cameraId } }   // ✅ mobile-safe
+        : { facingMode: "user" }               // fallback
+    };
 
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
     document.getElementById("preview").srcObject = currentStream;
 
     recordedChunks = [];
@@ -155,21 +158,22 @@ document.getElementById("startBtn").onclick = async function() {
 
     startBtn.disabled = true;
     stopBtn.disabled = false;
+
   } catch (err) {
-    alert("Camera/Mic error: " + err);
+    alert("Camera/Mic error: " + err.name);
   }
 };
 
-// Stop Recording
-document.getElementById("stopBtn").onclick = function() {
+// ⏹ Stop Recording
+document.getElementById("stopBtn").onclick = function () {
   mediaRecorder.stop();
   currentStream.getTracks().forEach(track => track.stop());
 
-  mediaRecorder.onstop = function() {
+  mediaRecorder.onstop = function () {
     const blob = new Blob(recordedChunks, { type: "video/mp4" });
     const reader = new FileReader();
 
-    reader.onloadend = function() {
+    reader.onloadend = function () {
       const base64Data = reader.result.split(",")[1];
 
       fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke/?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
@@ -183,7 +187,7 @@ document.getElementById("stopBtn").onclick = function() {
         })
       })
       .then(() => showToast("Video uploaded successfully!"))
-      .catch(err => showToast("Upload failed: " + err));
+      .catch(err => showToast("Upload failed"));
     };
 
     reader.readAsDataURL(blob);
