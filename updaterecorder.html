@@ -19,7 +19,7 @@
 
   h2 { margin: 10px 0; }
 
-  /* ✅ BIG FULL-SCREEN PREVIEW */
+  /* BIG preview */
   video {
     width: 100%;
     height: calc(100vh - 230px);
@@ -88,13 +88,21 @@
 </div>
 
 <div id="toast"></div>
-<canvas id="photoCanvas" style="display:none;"></canvas>
+
+<!-- CANVAS for photo + video -->
+<canvas id="canvas" style="display:none;"></canvas>
 
 <script>
 let mediaRecorder;
 let recordedChunks = [];
-let currentStream;
+let cameraStream;
+let canvasStream;
+let drawInterval;
 let currentFacing = "environment";
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const videoEl = document.getElementById("preview");
 
 const params = new URLSearchParams(window.location.search);
 const userEmail = params.get("email");
@@ -107,69 +115,93 @@ function showToast(msg) {
   setTimeout(() => toast.className = "", 3000);
 }
 
+/* START CAMERA */
 async function startCamera() {
-  if (currentStream) {
-    currentStream.getTracks().forEach(t => t.stop());
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
   }
 
-  currentStream = await navigator.mediaDevices.getUserMedia({
+  cameraStream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: {
-      facingMode: { ideal: currentFacing },
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 30 }
+      facingMode: { ideal: currentFacing }
     }
   });
 
-  const video = document.getElementById("preview");
-  video.srcObject = currentStream;
-
-  video.style.transform =
-    currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
+  videoEl.srcObject = cameraStream;
 }
 
 startCamera();
 
-/* Flip Camera */
+/* FLIP CAMERA */
 document.getElementById("flipBtn").onclick = async () => {
   currentFacing = currentFacing === "user" ? "environment" : "user";
   await startCamera();
 };
 
-/* PHOTO */
-document.getElementById("photoBtn").onclick = () => {
-  const video = document.getElementById("preview");
-  const canvas = document.getElementById("photoCanvas");
-  const ctx = canvas.getContext("2d");
+/* DRAW VIDEO TO CANVAS (orientation-safe) */
+function startCanvasDraw() {
+  const isLandscape = window.innerWidth > window.innerHeight;
 
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
+  const vw = videoEl.videoWidth;
+  const vh = videoEl.videoHeight;
 
-  if (currentFacing === "user") {
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+  if (isLandscape) {
+    canvas.width = 1280;
+    canvas.height = 720;
+  } else {
+    canvas.width = 720;
+    canvas.height = 1280;
   }
 
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  drawInterval = setInterval(() => {
+    ctx.save();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  canvas.toBlob(blob => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      uploadToFlow({
-        filename: "photo_" + Date.now() + ".jpg",
-        filedata: reader.result.split(",")[1],
-        filetype: "image"
-      });
-    };
-    reader.readAsDataURL(blob);
-  }, "image/jpeg", 0.95);
+    if (isLandscape) {
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(90 * Math.PI / 180);
+      if (currentFacing === "user") ctx.scale(-1, 1);
+      ctx.drawImage(videoEl, -vw / 2, -vh / 2);
+    } else {
+      if (currentFacing === "user") {
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+    }
+
+    ctx.restore();
+  }, 33); // ~30fps
+}
+
+/* PHOTO */
+document.getElementById("photoBtn").onclick = () => {
+  startCanvasDraw();
+  setTimeout(() => {
+    clearInterval(drawInterval);
+
+    canvas.toBlob(blob => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        uploadToFlow({
+          filename: "photo_" + Date.now() + ".jpg",
+          filedata: reader.result.split(",")[1],
+          filetype: "image"
+        });
+      };
+      reader.readAsDataURL(blob);
+    }, "image/jpeg", 0.95);
+  }, 200);
 };
 
 /* VIDEO START */
 document.getElementById("startBtn").onclick = () => {
   recordedChunks = [];
-  mediaRecorder = new MediaRecorder(currentStream);
+  startCanvasDraw();
+
+  canvasStream = canvas.captureStream(30);
+  mediaRecorder = new MediaRecorder(canvasStream);
 
   mediaRecorder.ondataavailable = e => {
     if (e.data.size > 0) recordedChunks.push(e.data);
@@ -183,6 +215,7 @@ document.getElementById("startBtn").onclick = () => {
 /* VIDEO STOP */
 document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
+  clearInterval(drawInterval);
 
   mediaRecorder.onstop = () => {
     const blob = new Blob(recordedChunks, { type: "video/mp4" });
