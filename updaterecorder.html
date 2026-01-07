@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Video & Photo Recorder</title>
 
 <style>
@@ -13,14 +14,16 @@
     flex-direction: column;
     align-items: center;
     background: #f8f8f8;
-    height: 100vh;
+    min-height: 100vh;
   }
 
   h2 { margin: 10px 0; }
 
+  /* Landscape-friendly video */
   video {
     width: 100%;
-    height: calc(100vh - 230px);
+    aspect-ratio: 16 / 9;
+    height: auto;
     object-fit: cover;
     background: black;
   }
@@ -48,7 +51,7 @@
     border-radius: 4px;
     padding: 16px;
     position: fixed;
-    z-index: 1;
+    z-index: 10;
     left: 50%;
     bottom: 30px;
     transform: translateX(-50%);
@@ -110,12 +113,20 @@ async function startCamera() {
     currentStream.getTracks().forEach(t => t.stop());
   }
 
+  // Try locking orientation (mobile browsers that support it)
+  if (screen.orientation && screen.orientation.lock) {
+    screen.orientation.lock("landscape").catch(() => {});
+  }
+
   currentStream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: {
       facingMode: { ideal: currentFacing },
+
+      /* FORCE TRUE LANDSCAPE VIDEO */
       width: { ideal: 1280 },
       height: { ideal: 720 },
+      aspectRatio: 16 / 9,
       frameRate: { ideal: 30 }
     }
   });
@@ -123,19 +134,20 @@ async function startCamera() {
   const video = document.getElementById("preview");
   video.srcObject = currentStream;
 
+  // Mirror only front camera
   video.style.transform =
     currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
 }
 
 startCamera();
 
-// Flip Camera
+/* Flip Camera */
 document.getElementById("flipBtn").onclick = async () => {
   currentFacing = currentFacing === "user" ? "environment" : "user";
   await startCamera();
 };
 
-// PHOTO CAPTURE
+/* PHOTO CAPTURE */
 document.getElementById("photoBtn").onclick = () => {
   const video = document.getElementById("preview");
   const canvas = document.getElementById("photoCanvas");
@@ -156,25 +168,17 @@ document.getElementById("photoBtn").onclick = () => {
     reader.onloadend = () => {
       const base64Image = reader.result.split(",")[1];
 
-      fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: "photo_" + Date.now() + ".jpg",
-          filedata: base64Image,
-          filetype: "image",
-          userEmail,
-          userName
-        })
-      })
-      .then(() => showToast("Photo uploaded successfully!"))
-      .catch(() => showToast("Photo upload failed"));
+      uploadToFlow({
+        filename: "photo_" + Date.now() + ".jpg",
+        filedata: base64Image,
+        filetype: "image"
+      });
     };
     reader.readAsDataURL(blob);
   }, "image/jpeg", 0.95);
 };
 
-// START VIDEO
+/* START VIDEO */
 document.getElementById("startBtn").onclick = () => {
   recordedChunks = [];
   mediaRecorder = new MediaRecorder(currentStream);
@@ -188,7 +192,7 @@ document.getElementById("startBtn").onclick = () => {
   stopBtn.disabled = false;
 };
 
-// STOP VIDEO
+/* STOP VIDEO */
 document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
 
@@ -199,18 +203,11 @@ document.getElementById("stopBtn").onclick = () => {
     reader.onloadend = () => {
       const base64Data = reader.result.split(",")[1];
 
-      fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          filename: "video_" + Date.now() + ".mp4",
-          filedata: base64Data,
-          userEmail,
-          userName
-        })
-      })
-      .then(() => showToast("Video uploaded successfully!"))
-      .catch(() => showToast("Upload failed"));
+      uploadToFlow({
+        filename: "video_" + Date.now() + ".mp4",
+        filedata: base64Data,
+        filetype: "video"
+      });
     };
 
     reader.readAsDataURL(blob);
@@ -219,6 +216,21 @@ document.getElementById("stopBtn").onclick = () => {
   startBtn.disabled = false;
   stopBtn.disabled = true;
 };
+
+/* COMMON UPLOAD */
+function uploadToFlow(payload) {
+  fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      ...payload,
+      userEmail,
+      userName
+    })
+  })
+  .then(() => showToast(payload.filetype + " uploaded successfully!"))
+  .catch(() => showToast("Upload failed"));
+}
 </script>
 
 </body>
