@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Video Recorder</title>
+<title>Video & Photo Recorder</title>
 
 <style>
   body { 
@@ -20,7 +20,7 @@
 
   video {
     width: 100%;
-    height: calc(100vh - 210px);
+    height: calc(100vh - 230px);
     object-fit: cover;
     background: black;
   }
@@ -29,6 +29,8 @@
     display: flex;
     gap: 10px;
     margin: 10px 0;
+    flex-wrap: wrap;
+    justify-content: center;
   }
 
   button { 
@@ -72,23 +74,25 @@
 
 <body>
 
-<h2>Video Recorder</h2>
+<h2>Video & Photo Recorder</h2>
 
 <video id="preview" autoplay muted playsinline></video>
 
 <div class="controls">
-  <button id="flipBtn">🔄 Flip Camera</button>
-  <button id="startBtn">Start</button>
-  <button id="stopBtn" disabled>Stop</button>
+  <button id="flipBtn">🔄 Flip</button>
+  <button id="photoBtn">📸 Photo</button>
+  <button id="startBtn">▶️ Start</button>
+  <button id="stopBtn" disabled>⏹ Stop</button>
 </div>
 
 <div id="toast"></div>
+<canvas id="photoCanvas" style="display:none;"></canvas>
 
 <script>
 let mediaRecorder;
 let recordedChunks = [];
 let currentStream;
-let currentFacing = "environment"; // default back camera
+let currentFacing = "environment";
 
 const params = new URLSearchParams(window.location.search);
 const userEmail = params.get("email");
@@ -108,17 +112,21 @@ async function startCamera() {
 
   currentStream = await navigator.mediaDevices.getUserMedia({
     audio: true,
-    video: { facingMode: { ideal: currentFacing } }
+    video: {
+      facingMode: { ideal: currentFacing },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      frameRate: { ideal: 30 }
+    }
   });
 
-  document.getElementById("preview").srcObject = currentStream;
+  const video = document.getElementById("preview");
+  video.srcObject = currentStream;
 
-  // mirror only for front cam
-  document.getElementById("preview").style.transform =
+  video.style.transform =
     currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
 }
 
-// initial camera load
 startCamera();
 
 // Flip Camera
@@ -127,7 +135,46 @@ document.getElementById("flipBtn").onclick = async () => {
   await startCamera();
 };
 
-// Start Recording
+// PHOTO CAPTURE
+document.getElementById("photoBtn").onclick = () => {
+  const video = document.getElementById("preview");
+  const canvas = document.getElementById("photoCanvas");
+  const ctx = canvas.getContext("2d");
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  if (currentFacing === "user") {
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  canvas.toBlob(blob => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Image = reader.result.split(",")[1];
+
+      fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          filename: "photo_" + Date.now() + ".jpg",
+          filedata: base64Image,
+          filetype: "image",
+          userEmail,
+          userName
+        })
+      })
+      .then(() => showToast("Photo uploaded successfully!"))
+      .catch(() => showToast("Photo upload failed"));
+    };
+    reader.readAsDataURL(blob);
+  }, "image/jpeg", 0.95);
+};
+
+// START VIDEO
 document.getElementById("startBtn").onclick = () => {
   recordedChunks = [];
   mediaRecorder = new MediaRecorder(currentStream);
@@ -141,10 +188,9 @@ document.getElementById("startBtn").onclick = () => {
   stopBtn.disabled = false;
 };
 
-// Stop Recording
+// STOP VIDEO
 document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
-  currentStream.getTracks().forEach(track => track.stop());
 
   mediaRecorder.onstop = () => {
     const blob = new Blob(recordedChunks, { type: "video/mp4" });
@@ -177,4 +223,3 @@ document.getElementById("stopBtn").onclick = () => {
 
 </body>
 </html>
-
