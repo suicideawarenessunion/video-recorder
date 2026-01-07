@@ -19,11 +19,10 @@
 
   h2 { margin: 10px 0; }
 
-  /* Landscape-friendly video */
+  /* ✅ BIG FULL-SCREEN PREVIEW */
   video {
     width: 100%;
-    aspect-ratio: 16 / 9;
-    height: auto;
+    height: calc(100vh - 230px);
     object-fit: cover;
     background: black;
   }
@@ -113,20 +112,12 @@ async function startCamera() {
     currentStream.getTracks().forEach(t => t.stop());
   }
 
-  // Try locking orientation (mobile browsers that support it)
-  if (screen.orientation && screen.orientation.lock) {
-    screen.orientation.lock("landscape").catch(() => {});
-  }
-
   currentStream = await navigator.mediaDevices.getUserMedia({
     audio: true,
     video: {
       facingMode: { ideal: currentFacing },
-
-      /* FORCE TRUE LANDSCAPE VIDEO */
       width: { ideal: 1280 },
       height: { ideal: 720 },
-      aspectRatio: 16 / 9,
       frameRate: { ideal: 30 }
     }
   });
@@ -134,7 +125,6 @@ async function startCamera() {
   const video = document.getElementById("preview");
   video.srcObject = currentStream;
 
-  // Mirror only front camera
   video.style.transform =
     currentFacing === "user" ? "scaleX(-1)" : "scaleX(1)";
 }
@@ -147,7 +137,7 @@ document.getElementById("flipBtn").onclick = async () => {
   await startCamera();
 };
 
-/* PHOTO CAPTURE */
+/* PHOTO */
 document.getElementById("photoBtn").onclick = () => {
   const video = document.getElementById("preview");
   const canvas = document.getElementById("photoCanvas");
@@ -166,11 +156,9 @@ document.getElementById("photoBtn").onclick = () => {
   canvas.toBlob(blob => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64Image = reader.result.split(",")[1];
-
       uploadToFlow({
         filename: "photo_" + Date.now() + ".jpg",
-        filedata: base64Image,
+        filedata: reader.result.split(",")[1],
         filetype: "image"
       });
     };
@@ -178,7 +166,7 @@ document.getElementById("photoBtn").onclick = () => {
   }, "image/jpeg", 0.95);
 };
 
-/* START VIDEO */
+/* VIDEO START */
 document.getElementById("startBtn").onclick = () => {
   recordedChunks = [];
   mediaRecorder = new MediaRecorder(currentStream);
@@ -192,7 +180,7 @@ document.getElementById("startBtn").onclick = () => {
   stopBtn.disabled = false;
 };
 
-/* STOP VIDEO */
+/* VIDEO STOP */
 document.getElementById("stopBtn").onclick = () => {
   mediaRecorder.stop();
 
@@ -201,11 +189,9 @@ document.getElementById("stopBtn").onclick = () => {
     const reader = new FileReader();
 
     reader.onloadend = () => {
-      const base64Data = reader.result.split(",")[1];
-
       uploadToFlow({
         filename: "video_" + Date.now() + ".mp4",
-        filedata: base64Data,
+        filedata: reader.result.split(",")[1],
         filetype: "video"
       });
     };
@@ -217,7 +203,7 @@ document.getElementById("stopBtn").onclick = () => {
   stopBtn.disabled = true;
 };
 
-/* COMMON UPLOAD */
+/* UPLOAD */
 function uploadToFlow(payload) {
   fetch("https://3299cb60efafe263a7276ab328834e.db.environment.api.powerplatform.com:443/powerautomate/automations/direct/workflows/334d4c7c43fc45cfb26d29910cf613d2/triggers/manual/paths/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=85YJTElGV4e568r9HA58gkQExjZequ_P3KOXOVuo5Wo", {
     method: "POST",
